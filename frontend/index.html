@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>California Housing — Valuation Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  :root{
+    --ink: #12161d;
+    --surface: #1b212b;
+    --surface-2: #212836;
+    --line: #2a323f;
+    --text: #e9edf3;
+    --muted: #8b93a3;
+    --brass: #c9a24b;
+    --brass-dim: #8a713a;
+    --contour: #33465340;
+  }
+
+  * { box-sizing: border-box; }
+
+  body{
+    margin:0;
+    background: var(--ink);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+  }
+
+  .topbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding: 22px 40px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .brand{
+    font-family:'Fraunces', serif;
+    font-size: 20px;
+    letter-spacing: 0.02em;
+  }
+  .brand span{ color: var(--brass); }
+
+  .brand-sub{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .layout{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    min-height: calc(100vh - 73px);
+  }
+
+  @media (max-width: 860px){
+    .layout{ grid-template-columns: 1fr; }
+  }
+
+  /* ---------- LEFT: field survey form ---------- */
+  .survey{
+    padding: 48px;
+    border-right: 1px solid var(--line);
+  }
+
+  .survey h1{
+    font-family:'Fraunces', serif;
+    font-weight: 400;
+    font-size: 30px;
+    margin: 0 0 6px 0;
+  }
+
+  .survey p.lede{
+    color: var(--muted);
+    font-size: 14px;
+    margin: 0 0 32px 0;
+    max-width: 46ch;
+  }
+
+  .field-grid{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px 16px;
+  }
+
+  .field{ display:flex; flex-direction:column; gap:6px; }
+  .field.span-2{ grid-column: 1 / -1; }
+
+  .field label{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .field input, .field select{
+    background: var(--surface);
+    border: 1px solid var(--line);
+    color: var(--text);
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 14px;
+    padding: 10px 12px;
+    border-radius: 3px;
+    outline: none;
+    transition: border-color .15s ease;
+  }
+
+  .field input:focus, .field select:focus{
+    border-color: var(--brass);
+  }
+
+  .field .hint{
+    font-size: 10.5px;
+    color: #5c6474;
+  }
+
+  button.submit{
+    margin-top: 30px;
+    width: 100%;
+    padding: 14px;
+    background: var(--brass);
+    color: #12161d;
+    border: none;
+    border-radius: 3px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background .15s ease;
+  }
+
+  button.submit:hover{ background: #ddb35f; }
+  button.submit:disabled{ background: var(--brass-dim); cursor: wait; }
+
+  .error{
+    margin-top: 14px;
+    font-size: 12.5px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: #d97757;
+    display:none;
+  }
+
+  /* ---------- RIGHT: valuation panel ---------- */
+  .valuation{
+    position: relative;
+    overflow:hidden;
+    background: var(--ink);
+  }
+
+  #map{
+    position:absolute;
+    inset: 0;
+    z-index: 0;
+    filter: saturate(0.7) brightness(0.85);
+  }
+
+  /* dark scrim so the map reads as backdrop, not the main focus */
+  .map-scrim{
+    position:absolute;
+    inset:0;
+    z-index: 1;
+    background: radial-gradient(circle at center, transparent 0%, rgba(18,22,29,0.35) 60%, rgba(18,22,29,0.75) 100%);
+    pointer-events:none;
+  }
+
+  .panel-content{
+    position:relative;
+    z-index: 2;
+    height: 100%;
+    padding: 48px;
+    display:flex;
+    flex-direction:column;
+    justify-content: center;
+    align-items:center;
+    pointer-events:none;
+  }
+
+  .coords{
+    position:absolute;
+    top: 24px;
+    left: 48px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    color: var(--text);
+    letter-spacing: 0.03em;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+  }
+  @media (max-width: 860px){ .coords{ left: 24px; } }
+
+  .stamp{
+    position:relative;
+    width: 300px;
+    height: 300px;
+    border: 1.5px dashed var(--brass-dim);
+    border-radius: 50%;
+    background: rgba(18, 22, 29, 0.72);
+    backdrop-filter: blur(3px);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    transform: rotate(-4deg);
+    opacity: 0.5;
+    transition: opacity .3s ease, transform .3s ease, border-color .3s ease;
+  }
+
+  .stamp.ready{
+    opacity: 1;
+    transform: rotate(-4deg) scale(1.02);
+  }
+
+  .stamp-eyebrow{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--brass);
+    margin-bottom: 10px;
+  }
+
+  .stamp-value{
+    font-family:'Fraunces', serif;
+    font-size: 40px;
+    line-height: 1.1;
+  }
+
+  .stamp-value .placeholder{ color: var(--muted); font-size: 22px; }
+
+  .stamp-caption{
+    margin-top: 10px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    color: var(--muted);
+    max-width: 22ch;
+  }
+
+  .legend{
+    margin-top: 34px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    color: #5c6474;
+    text-align:center;
+    letter-spacing: 0.04em;
+  }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div>
+      <div class="brand">Meridian <span>Assay</span></div>
+      <div class="brand-sub">California parcel valuation desk</div>
+    </div>
+    <div class="brand-sub" id="model-status">checking model…</div>
+  </div>
+
+  <div class="layout">
+
+    <!-- LEFT: input form -->
+    <div class="survey">
+      <h1>Field Survey</h1>
+      <p class="lede">Enter the parcel's readings below. The valuation model will run against the same pipeline used at training time.</p>
+
+      <form id="survey-form">
+        <div class="field-grid">
+          <div class="field">
+            <label for="longitude">Longitude</label>
+            <input type="number" step="0.01" id="longitude" required value="-122.23" />
+          </div>
+          <div class="field">
+            <label for="latitude">Latitude</label>
+            <input type="number" step="0.01" id="latitude" required value="37.88" />
+          </div>
+
+          <div class="field">
+            <label for="housing_median_age">Median Age (yrs)</label>
+            <input type="number" step="1" id="housing_median_age" required value="41" />
+          </div>
+          <div class="field">
+            <label for="median_income">Median Income</label>
+            <input type="number" step="0.01" id="median_income" required value="8.33" />
+            <span class="hint">in tens of thousands, e.g. 8.33 = $83,300</span>
+          </div>
+
+          <div class="field">
+            <label for="total_rooms">Total Rooms</label>
+            <input type="number" step="1" id="total_rooms" required value="880" />
+            <span class="hint">across the block, not per unit</span>
+          </div>
+          <div class="field">
+            <label for="total_bedrooms">Total Bedrooms</label>
+            <input type="number" step="1" id="total_bedrooms" required value="129" />
+          </div>
+
+          <div class="field">
+            <label for="population">Population</label>
+            <input type="number" step="1" id="population" required value="322" />
+          </div>
+          <div class="field">
+            <label for="households">Households</label>
+            <input type="number" step="1" id="households" required value="126" />
+          </div>
+
+          <div class="field span-2">
+            <label for="ocean_proximity">Proximity to Ocean</label>
+            <select id="ocean_proximity" required>
+              <option value="NEAR BAY">Near Bay</option>
+              <option value="<1H OCEAN">Less than 1 Hour to Ocean</option>
+              <option value="INLAND">Inland</option>
+              <option value="NEAR OCEAN">Near Ocean</option>
+              <option value="ISLAND">Island</option>
+            </select>
+          </div>
+        </div>
+
+        <button type="submit" class="submit" id="submit-btn">Run Valuation</button>
+        <div class="error" id="error-box"></div>
+      </form>
+    </div>
+
+    <!-- RIGHT: result -->
+    <div class="valuation">
+      <div id="map"></div>
+      <div class="map-scrim"></div>
+
+      <div class="panel-content">
+        <div class="coords" id="coords-readout">LON -122.23 · LAT 37.88</div>
+
+        <div class="stamp" id="stamp">
+          <div class="stamp-eyebrow">Assessed Value</div>
+          <div class="stamp-value" id="stamp-value"><span class="placeholder">awaiting survey</span></div>
+          <div class="stamp-caption" id="stamp-caption">Submit the field survey to generate a reading.</div>
+        </div>
+
+        <div class="legend">Random Forest · trained on 1990 CA census blocks</div>
+      </div>
+    </div>
+
+  </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+  // Point this at wherever you run the FastAPI backend.
+  const API_BASE = "http://localhost:8000";
+
+  // ---------- Map ----------
+  const map = L.map('map', { zoomControl: false, attributionControl: true, scrollWheelZoom: false })
+    .setView([37.88, -122.23], 8);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    subdomains: 'abcd',
+    maxZoom: 19
+  }).addTo(map);
+
+  const marker = L.circleMarker([37.88, -122.23], {
+    radius: 7,
+    color: '#c9a24b',
+    weight: 2,
+    fillColor: '#c9a24b',
+    fillOpacity: 0.9
+  }).addTo(map);
+
+  function updateMap(lat, lon){
+    if(!isFinite(lat) || !isFinite(lon)) return;
+    if(lat < -90 || lat > 90 || lon < -180 || lon > 180) return;
+    marker.setLatLng([lat, lon]);
+    map.flyTo([lat, lon], map.getZoom(), { duration: 0.6 });
+  }
+
+  // Grid/flex layouts can settle after Leaflet measures the container once.
+  setTimeout(() => map.invalidateSize(), 200);
+  window.addEventListener('resize', () => map.invalidateSize());
+
+  const form = document.getElementById('survey-form');
+  const submitBtn = document.getElementById('submit-btn');
+  const errorBox = document.getElementById('error-box');
+  const stamp = document.getElementById('stamp');
+  const stampValue = document.getElementById('stamp-value');
+  const stampCaption = document.getElementById('stamp-caption');
+  const coordsReadout = document.getElementById('coords-readout');
+  const modelStatus = document.getElementById('model-status');
+
+  const lonInput = document.getElementById('longitude');
+  const latInput = document.getElementById('latitude');
+
+  function updateCoords(){
+    coordsReadout.textContent = `LON ${lonInput.value} · LAT ${latInput.value}`;
+    updateMap(parseFloat(latInput.value), parseFloat(lonInput.value));
+  }
+  lonInput.addEventListener('input', updateCoords);
+  latInput.addEventListener('input', updateCoords);
+
+  function formatCurrency(n){
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+  }
+
+  async function checkHealth(){
+    try{
+      const res = await fetch(`${API_BASE}/health`);
+      if(!res.ok) throw new Error();
+      modelStatus.textContent = "model online";
+    }catch{
+      modelStatus.textContent = "backend unreachable";
+    }
+  }
+  checkHealth();
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorBox.style.display = 'none';
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Running…";
+    stamp.classList.remove('ready');
+
+    const payload = {
+      longitude: parseFloat(lonInput.value),
+      latitude: parseFloat(latInput.value),
+      housing_median_age: parseFloat(document.getElementById('housing_median_age').value),
+      total_rooms: parseFloat(document.getElementById('total_rooms').value),
+      total_bedrooms: parseFloat(document.getElementById('total_bedrooms').value),
+      population: parseFloat(document.getElementById('population').value),
+      households: parseFloat(document.getElementById('households').value),
+      median_income: parseFloat(document.getElementById('median_income').value),
+      ocean_proximity: document.getElementById('ocean_proximity').value,
+    };
+
+    try{
+      const res = await fetch(`${API_BASE}/predict`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if(!res.ok){
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.detail || `Request failed (${res.status})`);
+      }
+
+      const data = await res.json();
+      stampValue.innerHTML = formatCurrency(data.predicted_price);
+      stampCaption.textContent = "Predicted median house value for the parcel.";
+      stamp.classList.add('ready');
+      updateMap(payload.latitude, payload.longitude);
+    }catch(err){
+      errorBox.textContent = err.message || "Something went wrong reaching the model.";
+      errorBox.style.display = 'block';
+    }finally{
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Run Valuation";
+    }
+  });
+</script>
+
+</body>
+</html>
